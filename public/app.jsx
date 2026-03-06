@@ -1,0 +1,1105 @@
+
+// ─────────────────────────────────────────────
+// PDF EXPORT (print-based, no external CDN)
+// ─────────────────────────────────────────────
+function buildDashboardHTML(analysis) {
+  const fecha = new Date().toLocaleDateString("es-CL", { day: "2-digit", month: "long", year: "numeric" });
+  const segColors = { AX:"#c82828",AY:"#be6e00",BX:"#be6e00",BY:"#1e64b4",AZ:"#888",BZ:"#888",CX:"#888",CY:"#888",CZ:"#888" };
+
+  const kpiCards = [
+    { label:"Venta 2026",   val: fmt(analysis.totalVenta),             color:"#1e64b4" },
+    { label:"Margen 2026",  val: fmt(analysis.totalMargen),            color:"#1e8c50" },
+    { label:"Margen %",     val: `${analysis.margenPct.toFixed(1)}%`,  color:"#1e8c50" },
+    { label:"SKUs activos", val: fmtN(analysis.nActivos),              color:"#333" },
+  ].map(k => `<div class="kpi-card" style="border-left:3px solid ${k.color}">
+    <div class="kpi-label">${k.label}</div>
+    <div class="kpi-val" style="color:${k.color}">${k.val}</div>
+  </div>`).join("");
+
+  const alertCards = [
+    { label:"Quiebres",      val: analysis.quiebres.length,                             color:"#c82828" },
+    { label:"Pot. Quiebres", val: analysis.potQuiebres.length,                          color:"#be6e00" },
+    { label:"Sobrestock",    val: analysis.sobrestock.length,                           color:"#1e64b4" },
+    { label:"OK",            val: analysis.merged.filter(s=>s.alert==="OK").length,     color:"#1e8c50" },
+  ].map(a => `<div class="alert-card">
+    <div class="alert-num" style="color:${a.color}">${a.val}</div>
+    <div class="alert-lbl" style="color:${a.color}">${a.label}</div>
+  </div>`).join("");
+
+  const matrixCells = ["AX","AY","AZ","BX","BY","BZ","CX","CY","CZ"].map(k => {
+    const d = analysis.matrix[k];
+    const c = segColors[k] || "#888";
+    return `<div class="matrix-cell" style="border-top:3px solid ${c}">
+      <div class="seg-label" style="color:${c}">${k}</div>
+      <div class="seg-count">${d ? fmtN(d.count) : "—"}</div>
+      <div class="seg-venta">${d ? fmt(d.venta) : ""}</div>
+    </div>`;
+  }).join("");
+
+  const quiebreRows = analysis.quiebres.slice(0,20).map((s,i) =>
+    `<tr class="${i%2?"alt":""}">
+      <td style="color:#c82828;font-weight:700">${s.cod}</td>
+      <td>${s.desc.slice(0,40)}</td>
+      <td style="font-weight:700">${s.abc}${s.xyz}</td>
+      <td style="color:#c82828">${s.stock.toFixed(0)}</td>
+      <td>${s.avgDaily.toFixed(1)}</td>
+      <td>${fmt(s.venta)}</td>
+    </tr>`).join("");
+
+  const sobrestockRows = analysis.sobrestock.slice(0,20).map((s,i) =>
+    `<tr class="${i%2?"alt":""}">
+      <td style="color:#1e64b4;font-weight:700">${s.cod}</td>
+      <td>${s.desc.slice(0,40)}</td>
+      <td style="font-weight:700">${s.abc}${s.xyz}</td>
+      <td>${fmtN(s.stock)}</td>
+      <td>${s.cobertura===9999?"∞":`${s.cobertura.toFixed(0)}d`}</td>
+      <td>${fmt(s.venta)}</td>
+    </tr>`).join("");
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Dashboard Abastecimiento — Oviedo</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #222; background: #fff; }
+  @page { size: A4; margin: 12mm 14mm; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+
+  .header { background: #141414; color: #fff; padding: 8px 14px; display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .logo { background: #e8c800; color: #111; font-weight: 900; font-size: 10px; padding: 3px 8px; letter-spacing: 2px; }
+  .header-title { color: #aaa; font-size: 9px; letter-spacing: 1px; }
+  .header-date { margin-left: auto; color: #aaa; font-size: 9px; }
+  .accent-line { height: 2px; background: #e8c800; margin-bottom: 16px; }
+
+  h1 { font-size: 20px; font-weight: 700; color: #111; margin-bottom: 4px; }
+  .subtitle { color: #888; font-size: 10px; margin-bottom: 16px; }
+
+  .kpi-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 12px; }
+  .kpi-card { border: 1px solid #ddd; border-radius: 4px; padding: 10px 12px; background: #fafafa; }
+  .kpi-label { color: #888; font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .kpi-val { font-size: 14px; font-weight: 700; }
+
+  .alert-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 16px; }
+  .alert-card { border: 1px solid #ddd; border-radius: 4px; padding: 8px; text-align: center; background: #fafafa; }
+  .alert-num { font-size: 20px; font-weight: 700; }
+  .alert-lbl { font-size: 9px; margin-top: 2px; }
+
+  .section-title { font-size: 9px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; margin-top: 14px; }
+  .matrix-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-bottom: 6px; }
+  .matrix-cell { border: 1px solid #ddd; border-radius: 4px; padding: 8px; text-align: center; background: #fafafa; }
+  .seg-label { font-size: 10px; font-weight: 700; margin-bottom: 3px; }
+  .seg-count { font-size: 15px; font-weight: 700; color: #222; }
+  .seg-venta { font-size: 9px; color: #888; margin-top: 2px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 6px; }
+  thead tr { background: #efefef; }
+  th { padding: 5px 7px; text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; color: #444; border-bottom: 2px solid #ccc; }
+  td { padding: 4px 7px; border-bottom: 1px solid #eee; }
+  tr.alt td { background: #f8f8f8; }
+
+  .footer { margin-top: 20px; padding-top: 8px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; color: #aaa; font-size: 9px; }
+  .page-break { page-break-before: always; }
+<\/style><\/head><body>
+
+<div class="header">
+  <span class="logo">OVIEDO</span>
+  <span class="header-title">ABASTECIMIENTO · ABC×XYZ</span>
+  <span class="header-date">Generado: ${fecha}</span>
+</div>
+<div class="accent-line"></div>
+
+<h1>Dashboard de Abastecimiento</h1>
+<div class="subtitle">Isabel Riquelme · ${fmtN(analysis.nSkus)} SKUs · Período: ${analysis.nDays} días hábiles</div>
+
+<div class="kpi-row">${kpiCards}</div>
+<div class="alert-row">${alertCards}</div>
+
+<div class="section-title">Matriz ABC × XYZ</div>
+<div class="matrix-grid">${matrixCells}</div>
+<div style="color:#aaa;font-size:9px;margin-bottom:14px">ABC = % ventas acumulado (A=80%/B=15%/C=5%) · XYZ = % margen acumulado (X=80%/Y=15%/Z=5%)</div>
+
+${analysis.quiebres.length > 0 ? `
+<div class="section-title" style="color:#c82828">Quiebres Activos — ${analysis.quiebres.length} SKUs</div>
+<table>
+  <thead><tr><th>SKU</th><th>Descripción</th><th>Clase</th><th>Stock</th><th>Vta/día</th><th>Venta 2026</th></tr></thead>
+  <tbody>${quiebreRows}</tbody>
+</table>` : ""}
+
+<div class="section-title" style="color:#1e64b4">Sobrestock — Top ${Math.min(analysis.sobrestock.length,20)} de ${analysis.sobrestock.length} SKUs</div>
+<table>
+  <thead><tr><th>SKU</th><th>Descripción</th><th>Clase</th><th>Stock</th><th>Cobertura</th><th>Venta 2026</th></tr></thead>
+  <tbody>${sobrestockRows}</tbody>
+</table>
+
+<div class="footer">
+  <span>Oviedo Ferreterías · Sistema de Abastecimiento ABC×XYZ</span>
+  <span>${fecha}</span>
+</div>
+</body></html>`;
+}
+
+function buildAnalysisHTML(messages) {
+  const fecha = new Date().toLocaleDateString("es-CL", { day: "2-digit", month: "long", year: "numeric" });
+
+  const renderMd = (text) => {
+    const lines = text.split("\n");
+    let html = "";
+    let inTable = false, headers = [], rows = [];
+
+    const flushTable = () => {
+      if (!headers.length) return;
+      html += `<table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>`;
+      rows.forEach((r,i) => { html += `<tr class="${i%2?"alt":""}">${r.map(c=>`<td>${c}</td>`).join("")}</tr>`; });
+      html += `</tbody></table>`;
+      headers = []; rows = []; inTable = false;
+    };
+
+    lines.forEach(line => {
+      if (line.trim().startsWith("|")) {
+        const cells = line.split("|").filter(Boolean).map(c=>c.trim());
+        if (cells.some(c=>/^[-: ]+$/.test(c))) return;
+        if (!inTable) { inTable = true; headers = cells; }
+        else rows.push(cells);
+        return;
+      }
+      if (inTable) flushTable();
+      if (!line.trim()) { html += "<br>"; return; }
+      const clean = line.replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>").replace(/\*(.*?)\*/g,"<em>$1</em>").replace(/`(.*?)`/g,"<code>$1</code>");
+      if (line.startsWith("# ")) html += `<h2>${clean.replace(/^#+ */,"")}</h2>`;
+      else if (line.startsWith("## ")) html += `<h3>${clean.replace(/^#+ */,"")}</h3>`;
+      else if (line.startsWith("### ")) html += `<h4>${clean.replace(/^#+ */,"")}</h4>`;
+      else if (line.replace(/[═─ ]/g,"") === "") html += `<hr>`;
+      else html += `<p>${clean}</p>`;
+    });
+    if (inTable) flushTable();
+    return html;
+  };
+
+  const msgBlocks = messages.filter(m=>m.role==="assistant").map((msg,i) => `
+    <div class="msg-block">
+      <div class="msg-header">Análisis ${i+1}</div>
+      <div class="msg-body">${renderMd(msg.content||"")}</div>
+    </div>`).join("");
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Análisis Abastecimiento — Oviedo</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #222; background: #fff; line-height: 1.6; }
+  @page { size: A4; margin: 12mm 14mm; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+
+  .header { background: #141414; color: #fff; padding: 8px 14px; display: flex; align-items: center; gap: 12px; margin-bottom: 0; }
+  .logo { background: #e8c800; color: #111; font-weight: 900; font-size: 10px; padding: 3px 8px; letter-spacing: 2px; }
+  .header-title { color: #aaa; font-size: 9px; letter-spacing: 1px; }
+  .header-date { margin-left: auto; color: #aaa; font-size: 9px; }
+  .accent-line { height: 2px; background: #e8c800; margin-bottom: 16px; }
+
+  h1 { font-size: 20px; font-weight: 700; color: #111; margin: 12px 0 4px; }
+  h2 { font-size: 13px; font-weight: 700; color: #111; margin: 14px 0 4px; padding-bottom: 3px; border-bottom: 1px solid #ddd; }
+  h3 { font-size: 11px; font-weight: 700; color: #1e64b4; margin: 10px 0 3px; }
+  h4 { font-size: 10px; font-weight: 700; color: #555; margin: 8px 0 2px; }
+  p { margin: 3px 0; }
+  hr { border: none; border-top: 1px solid #eee; margin: 8px 0; }
+  code { background: #f4f4f4; padding: 1px 4px; border-radius: 2px; font-family: monospace; font-size: 10px; }
+  strong { font-weight: 700; }
+
+  .subtitle { color: #888; font-size: 10px; margin-bottom: 20px; }
+
+  .msg-block { margin-bottom: 24px; }
+  .msg-header { background: #f0f0f0; border-left: 3px solid #1e64b4; padding: 5px 10px; font-weight: 700; font-size: 10px; color: #1e64b4; margin-bottom: 10px; }
+  .msg-body { padding: 0 4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 10px; margin: 8px 0 10px; }
+  thead tr { background: #efefef; }
+  th { padding: 5px 7px; text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; color: #444; border-bottom: 2px solid #ccc; }
+  td { padding: 4px 7px; border-bottom: 1px solid #eee; }
+  tr.alt td { background: #f8f8f8; }
+
+  .footer { margin-top: 20px; padding-top: 8px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; color: #aaa; font-size: 9px; }
+<\/style><\/head><body>
+
+<div class="header">
+  <span class="logo">OVIEDO</span>
+  <span class="header-title">ANÁLISIS · INFORME COMPLETO</span>
+  <span class="header-date">Generado: ${fecha}</span>
+</div>
+<div class="accent-line"></div>
+
+<h1>Análisis de Abastecimiento</h1>
+<div class="subtitle">Informe generado por el Agente de Categorías — ${fecha}</div>
+
+${msgBlocks}
+
+<div class="footer">
+  <span>Oviedo Ferreterías · Análisis ABC×XYZ</span>
+  <span>${fecha}</span>
+</div>
+<\/body><\/html>`;
+}
+
+function downloadHTML(html, filename) {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename + ".html";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportDashboardPDF(analysis) {
+  downloadHTML(buildDashboardHTML(analysis), `oviedo-dashboard-${new Date().toISOString().slice(0,10)}`);
+}
+
+function exportAnalysisPDF(messages) {
+  downloadHTML(buildAnalysisHTML(messages), `oviedo-analisis-${new Date().toISOString().slice(0,10)}`);
+}
+
+const C = {
+  bg: "#0a0a0a", surface: "#141414", border: "#1e1e1e",
+  accent: "#e8ff00", text: "#f0f0f0", muted: "#555",
+  danger: "#ff4444", warning: "#ff9500", success: "#00e676", info: "#29b6f6",
+};
+
+// ─────────────────────────────────────────────
+// PARSING UTILITIES
+// ─────────────────────────────────────────────
+function pn(v) {
+  if (v === null || v === undefined) return 0;
+  try { return parseFloat(String(v).replace(/\./g, "").replace(",", ".").trim()) || 0; }
+  catch { return 0; }
+}
+
+function detectEncoding(buffer) {
+  const arr = new Uint8Array(buffer.slice(0, 4));
+  if (arr[0] === 0xFF && arr[1] === 0xFE) return "utf-16-le";
+  if (arr[0] === 0xFE && arr[1] === 0xFF) return "utf-16-be";
+  return "utf-8";
+}
+
+function cleanStr(s) {
+  return String(s || "").trim().replace(/"/g, "").replace(/^\uFEFF/, "").replace(/\u0000/g, "").replace(/\s+/g, " ");
+}
+
+function findCol(headers, candidates) {
+  // Find header index by trying multiple candidate names
+  for (const c of candidates) {
+    const idx = headers.findIndex(h => cleanStr(h).toLowerCase() === c.toLowerCase());
+    if (idx >= 0) return headers[idx];
+  }
+  // Partial match fallback
+  for (const c of candidates) {
+    const idx = headers.findIndex(h => cleanStr(h).toLowerCase().includes(c.toLowerCase()));
+    if (idx >= 0) return headers[idx];
+  }
+  return null;
+}
+
+function parseFile1(text) {
+  // F1: Venta_y_margen_por_mes — UTF-8, semicolon separator, single header row
+  // Cols: Sucursal;Hiperfamilia;Familia;Subfamilia;Marca;Codigo producto;Venta 2024...;Stock
+  const lines = text.replace(/\r/g, "").trim().split("\n");
+  const sep = ";";
+  const headers = lines[0].split(sep).map(cleanStr);
+  const skuIdx = headers.findIndex(h => h === "Codigo producto" || h === "Código producto");
+  const skuCol = skuIdx >= 0 ? skuIdx : 5; // fallback col 5
+
+  const skus = {};
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].split(sep).map(cleanStr);
+    const cod = vals[skuCol] || "";
+    if (!cod || cod === "Total" || cod === "Total general") continue;
+    const obj = {};
+    headers.forEach((h, j) => obj[h] = vals[j] || "");
+    skus[cod] = obj;
+  }
+  return { skus, headers, skuCol: headers[skuCol] };
+}
+
+function parseFile2(text) {
+  // F2: Venta_por_dia — UTF-8, semicolon separator, single header row
+  // Cols: Sucursal;SKU;Descripcion Producto;Marca;02-ene;05-ene;...
+  const lines = text.replace(/\r/g, "").trim().split("\n");
+  const sep = ";";
+  const headers = lines[0].split(sep).map(cleanStr);
+  const dateStartIdx = 4; // after Sucursal, SKU, Descripcion Producto, Marca
+  const dateCols = headers.slice(dateStartIdx).filter(c => c.length > 0);
+
+  const skus = {};
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].split(sep).map(cleanStr);
+    const sku = vals[1];
+    if (!sku || sku === "SKU" || sku.startsWith("Total")) continue;
+    const sales = dateCols.map((_, di) => pn(vals[dateStartIdx + di] || "0"));
+    skus[sku] = { desc: vals[2] || "", marca: vals[3] || "", sales, dateCols };
+  }
+  return { skus, dateCols };
+}
+
+// ─────────────────────────────────────────────
+// CORE ANALYSIS ENGINE
+// ─────────────────────────────────────────────
+function runAnalysis(f1Data, f2Data) {
+  const { skus: skus1 } = f1Data;
+  const { skus: skus2, dateCols } = f2Data;
+  const nDays = dateCols.length; // actual days available
+
+  // Build merged dataset
+  const merged = Object.entries(skus1).map(([cod, row]) => {
+    const venta = pn(row["Venta 2026"]);
+    const margen = pn(row["Margen 2026"]);
+    const costo = pn(row["Costo 2026"]);
+    const stock = pn(row["Stock"]);
+    const f2 = skus2[cod];
+    const salesArr = f2 ? f2.sales : [];
+    const totalUnits = salesArr.reduce((s, v) => s + v, 0);
+    const avgDaily = nDays > 0 ? totalUnits / nDays : 0;
+    const cobertura = avgDaily > 0 ? stock / avgDaily : (stock > 0 ? 9999 : 0);
+    const tieneVenta = avgDaily > 0 || venta > 0;
+
+    let alert = "SIN_MOVIMIENTO";
+    if (tieneVenta) {
+      if (stock <= 0 && avgDaily > 0) alert = "QUIEBRE";
+      else if (cobertura > 0 && cobertura < 7) alert = "POT_QUIEBRE";
+      else if (cobertura >= 7 && cobertura <= 30) alert = "COB_BAJA";
+      else if (cobertura > 90) alert = "SOBRESTOCK";
+      else alert = "OK";
+    }
+
+    return {
+      cod, desc: f2?.desc || row["Subfamilia"] || cod,
+      hiperfamilia: row["Hiperfamilia"], familia: row["Familia"],
+      subfamilia: row["Subfamilia"], marca: row["Marca"],
+      venta, margen, costo, stock,
+      avgDaily, cobertura, alert, tieneVenta,
+      margenPct: venta > 0 ? margen / venta * 100 : 0,
+      valorInmovilizado: stock * pn(row["Costo 2026"]) / (venta > 0 ? (venta / pn(row["Venta 2026"] || "1")) : 1),
+    };
+  });
+
+  // ABC by % ventas acumuladas (A=80%, B=15%, C=5%)
+  const totalVenta = merged.reduce((s, x) => s + x.venta, 0);
+  const byVenta = [...merged].sort((a, b) => b.venta - a.venta);
+  let acum = 0;
+  byVenta.forEach(s => {
+    acum += s.venta;
+    s.abc = acum / totalVenta <= 0.80 ? "A" : acum / totalVenta <= 0.95 ? "B" : "C";
+  });
+
+  // XYZ by % contribución/margen acumulado (X=80%, Y=15%, Z=5%)
+  const totalMargen = merged.reduce((s, x) => s + Math.max(x.margen, 0), 0);
+  const byMargen = [...merged].sort((a, b) => b.margen - a.margen);
+  acum = 0;
+  byMargen.forEach(s => {
+    acum += Math.max(s.margen, 0);
+    s.xyz = acum / totalMargen <= 0.80 ? "X" : acum / totalMargen <= 0.95 ? "Y" : "Z";
+  });
+
+  // Build lookup map
+  const skuMap = {};
+  merged.forEach(s => skuMap[s.cod] = s);
+
+  // Matrix counts
+  const matrix = {};
+  merged.forEach(s => {
+    const key = `${s.abc}${s.xyz}`;
+    if (!matrix[key]) matrix[key] = { count: 0, venta: 0, margen: 0 };
+    matrix[key].count++;
+    matrix[key].venta += s.venta;
+    matrix[key].margen += s.margen;
+  });
+
+  // Alert counts
+  const alerts = { QUIEBRE: [], POT_QUIEBRE: [], SOBRESTOCK: [], OK: [], COB_BAJA: [], SIN_MOVIMIENTO: [] };
+  merged.forEach(s => alerts[s.alert]?.push(s));
+
+  // Sort critical alerts by priority: AX first, then ABC×XYZ order
+  const prioOrder = { AX: 1, AY: 2, BX: 3, BY: 4, AZ: 5, CX: 6, BZ: 7, CY: 8, CZ: 9 };
+  const critSort = (a, b) => (prioOrder[`${a.abc}${a.xyz}`] || 9) - (prioOrder[`${b.abc}${b.xyz}`] || 9) || b.venta - a.venta;
+
+  const quiebres = [...alerts.QUIEBRE].sort(critSort);
+  const potQuiebres = [...alerts.POT_QUIEBRE].sort(critSort);
+  const sobrestock = [...alerts.SOBRESTOCK].sort((a, b) => (b.stock * b.costo / Math.max(totalVenta, 1)) - (a.stock * a.costo / Math.max(totalVenta, 1)) || b.stock - a.stock);
+
+  // OC sugerida: quiebres + pot_quiebres en A o B, cantidad = 45 días
+  const ocItems = [...quiebres, ...potQuiebres]
+    .filter(s => s.abc !== "C")
+    .map(s => ({ ...s, cantSugerida: Math.ceil(s.avgDaily * 45), totalOC: Math.ceil(s.avgDaily * 45) * (s.costo / Math.max(s.venta / Math.max(s.avgDaily * nDays, 1), 1)) }));
+
+  const totalVentaOC = ocItems.reduce((s, x) => s + x.cantSugerida * (x.costo > 0 ? x.costo : 0), 0);
+
+  return {
+    totalVenta, totalMargen, nSkus: merged.length,
+    nActivos: merged.filter(s => s.tieneVenta).length,
+    nDays, matrix, quiebres, potQuiebres, sobrestock, ocItems, merged,
+    margenPct: totalVenta > 0 ? totalMargen / totalVenta * 100 : 0,
+  };
+}
+
+// ─────────────────────────────────────────────
+// FORMAT HELPERS
+// ─────────────────────────────────────────────
+const fmt = n => Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : Math.abs(n) >= 1e3 ? `$${(n / 1e3).toFixed(0)}K` : `$${n.toFixed(0)}`;
+const fmtN = n => n.toLocaleString("es-CL");
+
+function buildAnalysisPrompt(res) {
+  const { totalVenta, totalMargen, margenPct, nSkus, nActivos, nDays, matrix, quiebres, potQuiebres, sobrestock, ocItems } = res;
+
+  const top5quiebres = quiebres.slice(0, 5).map(s =>
+    `${s.cod}|${s.desc.slice(0,25)}|${s.abc}${s.xyz}|${s.avgDaily.toFixed(1)}/día`
+  ).join("\n");
+
+  const top5pot = potQuiebres.slice(0, 5).map(s =>
+    `${s.cod}|${s.desc.slice(0,25)}|${s.abc}${s.xyz}|${s.cobertura.toFixed(0)}d`
+  ).join("\n");
+
+  const top5sobre = sobrestock.slice(0, 5).map(s =>
+    `${s.cod}|${s.desc.slice(0,25)}|${s.abc}${s.xyz}|${s.cobertura===9999?"∞":s.cobertura.toFixed(0)}d`
+  ).join("\n");
+
+  return `Analista Senior Oviedo Ferreterías. Responde en español con tablas markdown. Sé conciso.
+
+KPIs: ${fmtN(nSkus)} SKUs | Venta $${fmtN(Math.round(totalVenta))} | Margen ${margenPct.toFixed(1)}% | ${nDays} días
+Alertas: ${quiebres.length} quiebres | ${potQuiebres.length} pot.quiebres | ${sobrestock.length} sobrestock
+
+TOP 5 QUIEBRES (stock=0):
+${top5quiebres || "Ninguno"}
+
+TOP 5 POT.QUIEBRES (<7 días):
+${top5pot || "Ninguno"}
+
+TOP 5 SOBRESTOCK (>90 días):
+${top5sobre || "Ninguno"}
+
+Entrega:
+1. Resumen ejecutivo (3 líneas)
+2. Tabla top 5 quiebres con acción inmediata
+3. Tabla top 5 sobrestock con acción
+4. 3 acciones urgentes esta semana`;
+}
+
+// ─────────────────────────────────────────────
+// UI COMPONENTS
+// ─────────────────────────────────────────────
+function KpiCard({ label, value, sub, color, icon }) {
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 16px", borderLeft: `3px solid ${color || C.accent}` }}>
+      <div style={{ color: C.muted, fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{icon} {label}</div>
+      <div style={{ color: color || C.accent, fontSize: 20, fontWeight: 700, fontFamily: "monospace" }}>{value}</div>
+      {sub && <div style={{ color: C.muted, fontSize: 11, marginTop: 3 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function AlertBadge({ type, count }) {
+  const cfg = {
+    QUIEBRE: { bg: "#ff000022", border: C.danger, color: C.danger, label: "🔴 Quiebres" },
+    POT_QUIEBRE: { bg: "#ff950022", border: C.warning, color: C.warning, label: "🟠 Pot. Quiebres" },
+    SOBRESTOCK: { bg: "#29b6f622", border: C.info, color: C.info, label: "🔵 Sobrestock" },
+    OK: { bg: "#00e67622", border: C.success, color: C.success, label: "🟢 OK" },
+  };
+  const s = cfg[type] || { bg: "#33333322", border: C.muted, color: C.muted, label: type };
+  return (
+    <div style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 6, padding: "10px 14px", textAlign: "center" }}>
+      <div style={{ color: s.color, fontSize: 22, fontWeight: 700, fontFamily: "monospace" }}>{count}</div>
+      <div style={{ color: s.color, fontSize: 11, marginTop: 3 }}>{s.label}</div>
+    </div>
+  );
+}
+
+function MatrixCell({ label, data, highlight, onClick }) {
+  const [hov, setHov] = useState(false);
+  if (!data) return (
+    <div style={{ background: "#0d0d0d", border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 10px", textAlign: "center", opacity: 0.3 }}>
+      <div style={{ color: C.muted, fontSize: 10 }}>{label}</div>
+      <div style={{ color: C.muted, fontSize: 11 }}>—</div>
+    </div>
+  );
+  const colors = { AX: C.danger, AY: C.warning, BX: C.warning, BY: C.info, AZ: "#888", BZ: "#666", CX: "#777", CY: "#555", CZ: "#444" };
+  const color = colors[label] || C.muted;
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        background: hov ? `${color}28` : highlight ? `${color}14` : C.surface,
+        border: `1px solid ${hov ? color : highlight ? color : C.border}`,
+        borderRadius: 6, padding: "10px 8px", textAlign: "center",
+        cursor: "pointer", transition: "all 0.15s ease",
+        transform: hov ? "translateY(-1px)" : "none",
+        boxShadow: hov ? `0 4px 12px ${color}33` : "none",
+        position: "relative",
+      }}
+    >
+      <div style={{ color, fontSize: 11, fontWeight: 700, marginBottom: 4, letterSpacing: 1 }}>{label}</div>
+      <div style={{ color: C.text, fontSize: 18, fontWeight: 700, fontFamily: "monospace", lineHeight: 1 }}>{fmtN(data.count)}</div>
+      <div style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{fmt(data.venta)}</div>
+      <div style={{ color: color, fontSize: 8, marginTop: 4, opacity: hov ? 1 : 0, transition: "opacity 0.15s", letterSpacing: 0.5 }}>VER SKUs ↗</div>
+    </div>
+  );
+}
+
+function MatrixModal({ segment, skus, onClose }) {
+  const [sort, setSort] = useState("venta");
+  const [search, setSearch] = useState("");
+  if (!segment) return null;
+
+  const colors = { AX: C.danger, AY: C.warning, BX: C.warning, BY: C.info, AZ: "#888", BZ: "#666", CX: "#777", CY: "#555", CZ: "#444" };
+  const color = colors[segment] || C.muted;
+
+  const segSkus = skus
+    .filter(s => `${s.abc}${s.xyz}` === segment)
+    .filter(s => !search || s.cod.toLowerCase().includes(search.toLowerCase()) || s.desc.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      if (sort === "venta") return b.venta - a.venta;
+      if (sort === "stock") return b.stock - a.stock;
+      if (sort === "cobertura") return a.cobertura - b.cobertura;
+      if (sort === "margen") return b.margen - a.margen;
+      return 0;
+    });
+
+  const alertColor = a => ({ QUIEBRE: C.danger, POT_QUIEBRE: C.warning, SOBRESTOCK: C.info }[a] || C.success);
+  const alertIcon = a => ({ QUIEBRE: "🔴", POT_QUIEBRE: "🟠", SOBRESTOCK: "🔵" }[a] || "🟢");
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000,
+        display: "flex", alignItems: "flex-end", justifyContent: "center",
+        backdropFilter: "blur(4px)",
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: "100%", maxWidth: 900, maxHeight: "80vh",
+          background: "#111", border: `1px solid ${color}`,
+          borderRadius: "16px 16px 0 0", display: "flex", flexDirection: "column",
+          boxShadow: `0 -8px 40px ${color}22`,
+          animation: "slideUp 0.2s ease",
+        }}
+      >
+        {/* Header */}
+        <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+          <div style={{
+            background: `${color}22`, border: `1px solid ${color}`,
+            borderRadius: 6, padding: "4px 10px", color, fontWeight: 700, fontSize: 16, fontFamily: "monospace"
+          }}>{segment}</div>
+          <div>
+            <div style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>Segmento {segment} — {fmtN(segSkus.length)} SKUs</div>
+            <div style={{ color: C.muted, fontSize: 10 }}>
+              {segment[0] === "A" ? "Alta rotación (80% ventas)" : segment[0] === "B" ? "Media rotación (15% ventas)" : "Baja rotación (5% ventas)"}
+              {" · "}
+              {segment[1] === "X" ? "Alto margen (80%)" : segment[1] === "Y" ? "Margen medio (15%)" : "Bajo margen (5%)"}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ marginLeft: "auto", background: "transparent", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}>✕ Cerrar</button>
+        </div>
+
+        {/* Controls */}
+        <div style={{ padding: "10px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar SKU o descripción..."
+            style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 10px", color: C.text, fontSize: 12, fontFamily: "inherit", outline: "none" }}
+            onFocus={e => e.target.style.borderColor = color} onBlur={e => e.target.style.borderColor = C.border}
+          />
+          <div style={{ color: C.muted, fontSize: 11 }}>Ordenar:</div>
+          {[["venta","Venta"],["margen","Margen"],["stock","Stock"],["cobertura","Cobertura"]].map(([k,l]) => (
+            <button key={k} onClick={() => setSort(k)} style={{
+              background: sort === k ? `${color}22` : "transparent",
+              border: `1px solid ${sort === k ? color : C.border}`,
+              color: sort === k ? color : C.muted,
+              borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontFamily: "inherit"
+            }}>{l}</button>
+          ))}
+        </div>
+
+        {/* Table */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 16px" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+            <thead style={{ position: "sticky", top: 0, background: "#111", zIndex: 1 }}>
+              <tr style={{ borderBottom: `2px solid ${color}44` }}>
+                {["SKU","Descripción","Marca","Alert","Stock","Cob. días","Vta/día","Venta 2026","Margen 2026","Margen %"].map(h => (
+                  <th key={h} style={{ padding: "8px 8px", textAlign: "left", color, fontWeight: 600, whiteSpace: "nowrap", fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {segSkus.map((s, i) => (
+                <tr key={i} style={{ borderBottom: `1px solid ${C.border}`, background: i % 2 ? "#0d0d0d" : "transparent" }}
+                  onMouseEnter={e => e.currentTarget.style.background = `${color}08`}
+                  onMouseLeave={e => e.currentTarget.style.background = i % 2 ? "#0d0d0d" : "transparent"}>
+                  <td style={{ padding: "5px 8px", color: color, fontWeight: 700, fontFamily: "monospace" }}>{s.cod}</td>
+                  <td style={{ padding: "5px 8px", color: C.text, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.desc}>{s.desc}</td>
+                  <td style={{ padding: "5px 8px", color: C.muted }}>{s.marca}</td>
+                  <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}>
+                    <span style={{ color: alertColor(s.alert), fontSize: 10 }}>{alertIcon(s.alert)} {s.alert.replace("_"," ")}</span>
+                  </td>
+                  <td style={{ padding: "5px 8px", color: s.stock <= 0 ? C.danger : s.stock < 5 ? C.warning : C.text, fontFamily: "monospace" }}>{fmtN(Math.round(s.stock))}</td>
+                  <td style={{ padding: "5px 8px", color: s.cobertura < 7 ? C.danger : s.cobertura < 30 ? C.warning : s.cobertura > 90 ? C.info : C.text, fontFamily: "monospace" }}>
+                    {s.cobertura === 9999 ? "∞" : s.cobertura.toFixed(1)}
+                  </td>
+                  <td style={{ padding: "5px 8px", color: C.text, fontFamily: "monospace" }}>{s.avgDaily.toFixed(1)}</td>
+                  <td style={{ padding: "5px 8px", color: C.text, fontFamily: "monospace" }}>{fmt(s.venta)}</td>
+                  <td style={{ padding: "5px 8px", color: C.success, fontFamily: "monospace" }}>{fmt(s.margen)}</td>
+                  <td style={{ padding: "5px 8px", color: s.margenPct > 30 ? C.success : s.margenPct > 15 ? C.warning : C.muted, fontFamily: "monospace" }}>{s.margenPct.toFixed(1)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {segSkus.length === 0 && <div style={{ textAlign: "center", padding: "30px", color: C.muted }}>Sin resultados</div>}
+        </div>
+      </div>
+      <style dangerouslySetInnerHTML={{__html: `@keyframes slideUp{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}`}} />
+    </div>
+  );
+}
+
+function MarkdownContent({ text }) {
+  const renderMd = t => t
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.*?)\*/g, "<em>$1</em>")
+    .replace(/`(.*?)`/g, `<code style="background:#1e1e1e;padding:1px 5px;border-radius:3px;font-size:12px">$1</code>`);
+
+  const lines = text.split("\n");
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim().startsWith("|")) {
+      const tbl = [];
+      while (i < lines.length && lines[i].trim().startsWith("|")) { tbl.push(lines[i]); i++; }
+      const rows = tbl.filter(l => !l.match(/^\|[-| :]+\|$/));
+      const hdrs = rows[0]?.split("|").filter(Boolean).map(h => h.trim()) || [];
+      out.push(
+        <div key={i} style={{ overflowX: "auto", margin: "10px 0" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead><tr style={{ borderBottom: `2px solid ${C.accent}` }}>
+              {hdrs.map((h, hi) => <th key={hi} style={{ padding: "6px 10px", textAlign: "left", color: C.accent, fontWeight: 600, whiteSpace: "nowrap" }}>{h}</th>)}
+            </tr></thead>
+            <tbody>{rows.slice(1).map((row, ri) => {
+              const cells = row.split("|").filter(Boolean).map(c => c.trim());
+              return <tr key={ri} style={{ borderBottom: `1px solid ${C.border}`, background: ri % 2 ? "#0d0d0d" : "transparent" }}>
+                {cells.map((cell, ci) => <td key={ci} style={{ padding: "5px 10px", color: C.text, fontSize: 12 }} dangerouslySetInnerHTML={{ __html: renderMd(cell) }} />)}
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+      );
+    } else if (line.startsWith("## ")) {
+      out.push(<div key={i} style={{ color: C.accent, fontWeight: 700, fontSize: 13, margin: "16px 0 6px", borderBottom: `1px solid ${C.border}`, paddingBottom: 4 }}>{line.slice(3)}</div>);
+      i++;
+    } else if (line.startsWith("# ")) {
+      out.push(<div key={i} style={{ color: C.accent, fontWeight: 700, fontSize: 15, margin: "16px 0 8px" }}>{line.slice(2)}</div>);
+      i++;
+    } else {
+      out.push(<p key={i} style={{ margin: "3px 0", lineHeight: 1.65, fontSize: 13 }} dangerouslySetInnerHTML={{ __html: renderMd(line) }} />);
+      i++;
+    }
+  }
+  return <div>{out}</div>;
+}
+
+function Message({ msg }) {
+  const isUser = msg.role === "user";
+  const display = isUser ? msg.display || msg.content : msg.content;
+  return (
+    <div style={{ display: "flex", gap: 12, marginBottom: 20, flexDirection: isUser ? "row-reverse" : "row" }}>
+      <div style={{ width: 32, height: 32, borderRadius: "50%", flexShrink: 0, background: isUser ? C.border : C.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: isUser ? C.muted : C.bg }}>
+        {isUser ? "TU" : "CM"}
+      </div>
+      <div style={{ maxWidth: "82%", background: isUser ? "#1a1a1a" : C.surface, border: `1px solid ${isUser ? C.border : "#2a2a2a"}`, borderRadius: isUser ? "12px 4px 12px 12px" : "4px 12px 12px 12px", padding: "12px 16px", color: C.text, lineHeight: 1.6 }}>
+        <MarkdownContent text={display} />
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// MAIN APP
+// ─────────────────────────────────────────────
+function CategoryAgent() {
+  const [tab, setTab] = useState("data");
+  const [files, setFiles] = useState({ f1: null, f2: null });
+  const [analysis, setAnalysis] = useState(null);
+  const [processing, setProcessing] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [dragOver, setDragOver] = useState(null);
+  const [fileLoading, setFileLoading] = useState(false);
+  const [selectedSegment, setSelectedSegment] = useState(null);
+
+  const handleExportDashboard = () => {
+    if (!analysis) return;
+    try { exportDashboardPDF(analysis); } catch(e) { alert("Error al exportar: " + e.message); }
+  };
+
+  const handleExportAnalysis = () => {
+    if (!messages.length) return;
+    try { exportAnalysisPDF(messages); } catch(e) { alert("Error al exportar: " + e.message); }
+  };
+  const f1Ref = useRef(); const f2Ref = useRef();
+  const bottomRef = useRef();
+
+  const SYSTEM_PROMPT = `Eres un Analista de Abastecimiento Senior de Oviedo Ferreterías. 
+Respondes siempre en español, eres directo y ejecutivo. Usas tablas markdown.
+El usuario ya tiene el análisis calculado. Responde preguntas de seguimiento con precisión.`;
+
+  const readFile = (file) => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = e => {
+      let text = e.target.result || "";
+      // Strip BOM if present
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      // Remove null bytes
+      text = text.replace(/\u0000/g, "");
+      resolve(text);
+    };
+    r.onerror = reject;
+    r.readAsText(file, "utf-8");
+  });
+
+  const handleFile = async (file, slot) => {
+    setFileLoading(true);
+    try {
+      const text = await readFile(file);
+      if (!text || text.length < 50) {
+        alert("Archivo vacío o ilegible.");
+        setFileLoading(false);
+        return;
+      }
+      setFiles(prev => ({ ...prev, [slot]: { name: file.name, text } }));
+    } catch (e) {
+      alert("Error: " + e.message);
+    }
+    setFileLoading(false);
+  };
+
+  const runFullAnalysis = async () => {
+    if (!files.f1 || !files.f2) return;
+    setProcessing(true);
+    try {
+      const f1Data = parseFile1(files.f1.text);
+      const f2Data = parseFile2(files.f2.text);
+      const res = runAnalysis(f1Data, f2Data);
+
+      if (!res.merged || res.merged.length === 0) {
+        alert(`Parsing OK pero sin datos:\nF1 SKUs: ${Object.keys(f1Data.skus).length}\nF2 SKUs: ${Object.keys(f2Data.skus).length}\nskuCol F1: "${f1Data.skuCol}"\nHeaders F1: ${f1Data.headers.slice(0,6).join(", ")}`);
+        setProcessing(false);
+        return;
+      }
+      setAnalysis(res);
+
+      // Build prompt and send to Claude
+      const prompt = buildAnalysisPrompt(res);
+      const userMsg = { role: "user", content: prompt, display: "⚡ Análisis completo de abastecimiento ABC×XYZ" };
+      const newMsgs = [userMsg];
+      setMessages(newMsgs);
+      setTab("chat");
+      setLoading(true);
+
+      const apiRes = await fetch("/.netlify/functions/claude", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6", max_tokens: 1500,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      const data = await apiRes.json();
+      setMessages([userMsg, { role: "assistant", content: data.content?.[0]?.text || "Error." }]);
+    } catch (e) {
+      setMessages(prev => [...prev, { role: "assistant", content: "Error: " + e.message }]);
+    }
+    setProcessing(false);
+    setLoading(false);
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
+  };
+
+  const sendMessage = async (text) => {
+    if (!text.trim() || loading) return;
+    const ctx = analysis ? `\n\n[Contexto: análisis de ${fmtN(analysis.nSkus)} SKUs, venta $${fmtN(Math.round(analysis.totalVenta))}, ${analysis.quiebres.length} quiebres, ${analysis.potQuiebres.length} quiebres potenciales, ${analysis.sobrestock.length} sobrestock]` : "";
+    const fullContent = text + ctx;
+    const userMsg = { role: "user", content: fullContent, display: text };
+    const newMsgs = [...messages, userMsg];
+    setMessages(newMsgs);
+    setInput("");
+    setLoading(true);
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    try {
+      const res = await fetch("/.netlify/functions/claude", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6", max_tokens: 1500,
+          system: SYSTEM_PROMPT,
+          messages: newMsgs.map(m => ({ role: m.role, content: m.content })),
+        }),
+      });
+      const data = await res.json();
+      setMessages(prev => [...prev, { role: "assistant", content: data.content?.[0]?.text || "Error." }]);
+    } catch { setMessages(prev => [...prev, { role: "assistant", content: "Error de conexión." }]); }
+    setLoading(false);
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+  };
+
+  const handleDrop = (e, slot) => {
+    e.preventDefault(); setDragOver(null);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file, slot);
+  };
+
+  const quickActions = analysis ? [
+    "¿Cuáles son los 5 quiebres AX más urgentes?",
+    "Dame el top 10 sobrestock con acción concreta por cada uno",
+    "¿Qué SKUs CZ debería descontinuar?",
+    "Genera OC ejecutiva para enviar hoy",
+    "¿Qué categoría tiene peor situación de inventario?",
+    "Compara margen 2026 vs 2025 por hiperfamilia",
+  ] : [];
+
+  const bothLoaded = files.f1 && files.f2;
+
+  return (
+    <div style={{ fontFamily: "'IBM Plex Mono','Courier New',monospace", background: C.bg, minHeight: "100vh", color: C.text, display: "flex", flexDirection: "column", fontSize: 13 }}>
+
+      {/* HEADER */}
+      <div style={{ borderBottom: `1px solid ${C.border}`, padding: "10px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#0c0c0c" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ background: C.accent, color: C.bg, fontWeight: 900, fontSize: 11, padding: "3px 8px", letterSpacing: 2, borderRadius: 3 }}>OVIEDO</div>
+          <div style={{ color: C.muted, fontSize: 10, letterSpacing: 1 }}>ABASTECIMIENTO · ABC×XYZ</div>
+          {analysis && (
+            <div style={{ background: "#00e67611", border: `1px solid ${C.success}44`, color: C.success, fontSize: 10, padding: "2px 8px", borderRadius: 10 }}>
+              ✓ {fmtN(analysis.nSkus)} SKUs · {fmtN(analysis.nActivos)} activos
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {["data", "dashboard", "chat"].map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{ background: tab === t ? C.accent : "transparent", color: tab === t ? C.bg : C.muted, border: `1px solid ${tab === t ? C.accent : C.border}`, padding: "4px 11px", borderRadius: 4, cursor: "pointer", fontSize: 9, fontFamily: "inherit", textTransform: "uppercase", letterSpacing: 1, fontWeight: tab === t ? 700 : 400 }}>{t}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* DATA TAB */}
+      {tab === "data" && (
+        <div style={{ padding: 20, flex: 1, overflowY: "auto" }}>
+          <div style={{ color: C.muted, fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Carga los 2 archivos — el sistema los identifica automáticamente</div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
+            {[
+              { slot: "f1", label: "Ventas / Margen / Stock", hint: "Venta_y_margen_por_mes..." },
+              { slot: "f2", label: "Ventas por Día", hint: "Venta_por_dia..." }
+            ].map(({ slot, label, hint }) => (
+              <div key={slot}
+                onDrop={e => handleDrop(e, slot)}
+                onDragOver={e => { e.preventDefault(); setDragOver(slot); }}
+                onDragLeave={() => setDragOver(null)}
+                onClick={() => { if (!fileLoading) (slot === "f1" ? f1Ref : f2Ref).current?.click(); }}
+                style={{ border: `2px dashed ${dragOver === slot ? C.accent : files[slot] ? C.success : C.border}`, borderRadius: 10, padding: "24px 16px", textAlign: "center", cursor: "pointer", background: files[slot] ? "#00e67608" : dragOver === slot ? "#e8ff0008" : "transparent", transition: "all 0.2s" }}>
+                {fileLoading && !files[slot] ? (
+                  <>
+                    <div style={{ fontSize: 22, marginBottom: 6 }}>⏳</div>
+                    <div style={{ color: C.accent, fontSize: 12 }}>Leyendo...</div>
+                  </>
+                ) : files[slot] ? (
+                  <>
+                    <div style={{ fontSize: 22, marginBottom: 6 }}>✅</div>
+                    <div style={{ color: C.success, fontSize: 12, fontWeight: 700, marginBottom: 3 }}>{files[slot].name}</div>
+                    <div style={{ color: C.muted, fontSize: 10 }}>{label}</div>
+                    <button onClick={e => { e.stopPropagation(); setFiles(prev => ({ ...prev, [slot]: null })); setAnalysis(null); }}
+                      style={{ marginTop: 8, background: "transparent", border: `1px solid ${C.danger}`, color: C.danger, padding: "2px 10px", borderRadius: 4, cursor: "pointer", fontSize: 10, fontFamily: "inherit" }}>Remover</button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 24, marginBottom: 8 }}>📄</div>
+                    <div style={{ color: C.accent, fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{label}</div>
+                    <div style={{ color: C.muted, fontSize: 10 }}>{hint}</div>
+                    <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>Arrastra o haz click</div>
+                  </>
+                )}
+                <input ref={slot === "f1" ? f1Ref : f2Ref} type="file" accept=".csv,.txt,.tsv" style={{ display: "none" }}
+                  onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0], slot); }} />
+              </div>
+            ))}
+          </div>
+
+          {bothLoaded && (
+            <button onClick={runFullAnalysis} disabled={processing}
+              style={{ width: "100%", background: processing ? C.border : C.accent, color: C.bg, border: "none", borderRadius: 8, padding: "14px", cursor: processing ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, fontFamily: "inherit", letterSpacing: 0.5 }}>
+              {processing ? "⏳ Procesando..." : "⚡ CALCULAR ANÁLISIS ABC×XYZ COMPLETO →"}
+            </button>
+          )}
+
+          {!bothLoaded && (
+            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, marginTop: 8 }}>
+              <div style={{ color: C.muted, fontSize: 11, marginBottom: 8 }}>Archivos necesarios:</div>
+              <div style={{ color: C.text, fontSize: 12, lineHeight: 1.8 }}>
+                <div>1. <span style={{ color: C.accent }}>Venta_y_margen_por_mes</span> — ventas 2024/2025/2026, costos, márgenes y stock actual</div>
+                <div>2. <span style={{ color: C.accent }}>Venta_por_dia</span> — ventas unitarias por día hábil (para calcular cobertura real)</div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* DASHBOARD TAB */}
+      {tab === "dashboard" && (
+        <div style={{ padding: 16, flex: 1, overflowY: "auto" }}>
+          {!analysis ? (
+            <div style={{ textAlign: "center", padding: "60px 20px", color: C.muted }}>Carga los archivos y ejecuta el análisis primero</div>
+          ) : (
+            <>
+              {/* Dashboard toolbar */}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+                <button onClick={handleExportDashboard}
+                  style={{ background: C.accent, border: "none", color: C.bg, borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 11, fontFamily: "inherit", fontWeight: 700 }}>
+                  ⬇ Exportar PDF
+                </button>
+              </div>
+              {/* KPIs */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
+                <KpiCard label="Venta 2026" value={fmt(analysis.totalVenta)} sub={`${fmtN(analysis.nActivos)} SKUs activos`} color={C.accent} icon="💰" />
+                <KpiCard label="Margen 2026" value={fmt(analysis.totalMargen)} sub={`${analysis.margenPct.toFixed(1)}% sobre ventas`} color={C.success} icon="📊" />
+                <KpiCard label="Período base" value={`${analysis.nDays}d`} sub={`${fmtN(analysis.nSkus)} SKUs catálogo`} color={C.info} icon="📅" />
+              </div>
+
+              {/* Alert summary */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 16 }}>
+                <AlertBadge type="QUIEBRE" count={analysis.quiebres.length} />
+                <AlertBadge type="POT_QUIEBRE" count={analysis.potQuiebres.length} />
+                <AlertBadge type="SOBRESTOCK" count={analysis.sobrestock.length} />
+                <AlertBadge type="OK" count={analysis.merged.filter(s => s.alert === "OK").length} />
+              </div>
+
+              {/* ABC×XYZ Matrix */}
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 14, marginBottom: 16 }}>
+                <div style={{ color: C.muted, fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Matriz ABC × XYZ — <span style={{ color: C.accent }}>haz click en un segmento para ver sus SKUs</span></div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+                  {["AX","AY","AZ","BX","BY","BZ","CX","CY","CZ"].map(k => (
+                    <MatrixCell key={k} label={k} data={analysis.matrix[k]} highlight={["AX","AY","BX"].includes(k)}
+                      onClick={() => setSelectedSegment(k)} />
+                  ))}
+                </div>
+                <div style={{ color: C.muted, fontSize: 10, marginTop: 10 }}>
+                  ABC = % ventas (A=80%/B=15%/C=5%) · XYZ = % margen (X=80%/Y=15%/Z=5%) · <span style={{ color: C.danger }}>AX = crítico</span>
+                </div>
+              </div>
+
+              {/* Segment Modal */}
+              {selectedSegment && (
+                <MatrixModal
+                  segment={selectedSegment}
+                  skus={analysis.merged}
+                  onClose={() => setSelectedSegment(null)}
+                />
+              )}
+
+              {/* Top quiebres */}
+              {analysis.quiebres.length > 0 && (
+                <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 14, marginBottom: 16 }}>
+                  <div style={{ color: C.danger, fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>🔴 Top Quiebres Activos (por prioridad ABC×XYZ)</div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                      <thead><tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                        {["SKU","Descripción","Clase","Stock","Vta/día","Venta 2026"].map(h => <th key={h} style={{ padding: "5px 8px", textAlign: "left", color: C.accent, whiteSpace: "nowrap" }}>{h}</th>)}
+                      </tr></thead>
+                      <tbody>{analysis.quiebres.slice(0, 10).map((s, i) => (
+                        <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                          <td style={{ padding: "4px 8px", color: C.danger, fontWeight: 700 }}>{s.cod}</td>
+                          <td style={{ padding: "4px 8px", color: C.text, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.desc}</td>
+                          <td style={{ padding: "4px 8px", color: ["AX","AY","BX"].includes(`${s.abc}${s.xyz}`) ? C.warning : C.muted, fontWeight: 700 }}>{s.abc}{s.xyz}</td>
+                          <td style={{ padding: "4px 8px", color: C.danger }}>{s.stock.toFixed(0)}</td>
+                          <td style={{ padding: "4px 8px", color: C.text }}>{s.avgDaily.toFixed(1)}</td>
+                          <td style={{ padding: "4px 8px", color: C.text, fontFamily: "monospace" }}>{fmt(s.venta)}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Top sobrestock */}
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 14 }}>
+                <div style={{ color: C.info, fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>🔵 Top Sobrestock (cobertura &gt; 90 días)</div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                    <thead><tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                      {["SKU","Descripción","Clase","Stock","Cobertura","Venta 2026"].map(h => <th key={h} style={{ padding: "5px 8px", textAlign: "left", color: C.accent, whiteSpace: "nowrap" }}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>{analysis.sobrestock.slice(0, 10).map((s, i) => (
+                      <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: "4px 8px", color: C.info, fontWeight: 700 }}>{s.cod}</td>
+                        <td style={{ padding: "4px 8px", color: C.text, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.desc}</td>
+                        <td style={{ padding: "4px 8px", color: C.muted, fontWeight: 700 }}>{s.abc}{s.xyz}</td>
+                        <td style={{ padding: "4px 8px", color: C.text }}>{fmtN(s.stock)}</td>
+                        <td style={{ padding: "4px 8px", color: s.cobertura > 365 ? C.danger : C.warning }}>{s.cobertura === 9999 ? "∞" : `${s.cobertura.toFixed(0)}d`}</td>
+                        <td style={{ padding: "4px 8px", color: C.text, fontFamily: "monospace" }}>{fmt(s.venta)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* CHAT TAB */}
+      {tab === "chat" && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
+            {messages.length === 0 && (
+              <div style={{ textAlign: "center", padding: "50px 20px" }}>
+                <div style={{ color: C.accent, fontSize: 26, marginBottom: 10 }}>⚡</div>
+                <div style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Analista de Abastecimiento</div>
+                <div style={{ color: C.muted, fontSize: 12 }}>{analysis ? "Análisis listo. Haz preguntas de seguimiento." : "Carga los archivos en DATA y ejecuta el análisis primero."}</div>
+                {analysis && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 24 }}>
+                    {quickActions.map(a => (
+                      <button key={a} onClick={() => sendMessage(a)} style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, padding: "7px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: "inherit" }}
+                        onMouseEnter={e => e.target.style.borderColor = C.accent} onMouseLeave={e => e.target.style.borderColor = C.border}>{a}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {messages.map((msg, i) => <Message key={i} msg={msg} />)}
+            {loading && (
+              <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+                <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: C.bg, flexShrink: 0 }}>CM</div>
+                <div style={{ background: C.surface, border: `1px solid #2a2a2a`, borderRadius: "4px 12px 12px 12px", padding: "12px 16px", display: "flex", gap: 4, alignItems: "center" }}>
+                  {[0,1,2].map(i => <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: C.accent, animation: `pulse 1.2s ease-in-out ${i*0.2}s infinite` }} />)}
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 20px", background: "#0c0c0c", display: "flex", gap: 8, alignItems: "center" }}>
+            {messages.some(m => m.role === "assistant") && (
+              <button onClick={handleExportAnalysis}
+                style={{ background: C.accent, border: "none", color: C.bg, borderRadius: 6, padding: "8px 12px", cursor: "pointer", fontSize: 10, fontFamily: "inherit", fontWeight: 700, whiteSpace: "nowrap" }}>
+                ⬇ PDF Análisis
+              </button>
+            )}
+            <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage(input)}
+              placeholder={analysis ? "Pregunta sobre el análisis..." : "Ejecuta el análisis primero (pestaña DATA)"}
+              disabled={loading || !analysis}
+              style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6, padding: "9px 13px", color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none", opacity: analysis ? 1 : 0.5 }}
+              onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.border} />
+            <button onClick={() => sendMessage(input)} disabled={loading || !input.trim() || !analysis}
+              style={{ background: loading || !input.trim() || !analysis ? C.border : C.accent, color: C.bg, border: "none", borderRadius: 6, padding: "9px 18px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "inherit" }}>→</button>
+          </div>
+        </div>
+      )}
+
+      <style dangerouslySetInnerHTML={{__html: `@keyframes pulse{0%,80%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}`}} />
+    </div>
+  );
+}
